@@ -1,0 +1,12 @@
+langgraph
+langchain
+langchain-core
+langchain-community
+langchain-ollama
+python-dotenv
+pydantic
+fastapi
+uvicorn
+pytest
+chromadb
+sentence-transformers
