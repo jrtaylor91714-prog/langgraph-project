@@ -18,6 +18,8 @@ Intent = Literal[
     "recent_news",
     "competitors",
     "financials",
+    "ceo",
+    "products",
     "out_of_scope",
     "needs_clarification",
 ]
@@ -70,8 +72,6 @@ FOLLOW_UP_PATTERNS = (
 
 @dataclass
 class ClarityDecision:
-    """Output of the clarity pipeline before optional human interrupt."""
-
     intent: Intent
     is_company_research: bool
     needs_clarification: bool
@@ -83,20 +83,16 @@ class ClarityDecision:
 
 class ClarityClassifier:
     """
-    Three-step clarity analysis:
-      1. detect_entity  - find company/ticker mentions (no routing yet)
-      2. classify_intent - business vs out-of-scope vs clarification
-      3. decide          - combine entity + intent + memory into routing fields
+    1. detect_entity   - is a company/ticker mentioned?
+    2. classify_intent - is this a business research question?
+    3. decide          - research, interrupt, or out-of-scope?
     """
-
-    # ── Step 1: Entity detection ───────────────────────────────────────────
 
     def detect_entity(self, text: str) -> str | None:
         """Return a known company key if name/ticker appears as a whole word."""
         lower = text.lower()
         for key, info in COMPANIES.items():
-            candidates = [key, *info["aliases"]]
-            for token in candidates:
+            for token in [key, *info["aliases"]]:
                 if re.search(rf"\b{re.escape(token)}\b", lower):
                     return key
         return None
@@ -108,10 +104,7 @@ class ClarityClassifier:
         )
 
     def _has_out_of_scope_signal(self, text: str) -> bool:
-        lower = text.lower()
-        return any(kw in lower for kw in OUT_OF_SCOPE_KEYWORDS)
-
-    # ── Step 2: Intent classification ──────────────────────────────────────
+        return any(kw in text.lower() for kw in OUT_OF_SCOPE_KEYWORDS)
 
     def classify_intent(self, text: str, entity: str | None) -> Intent:
         """Keyword-based intent; out-of-scope beats company entity when non-business."""
@@ -119,7 +112,6 @@ class ClarityClassifier:
         business = self._has_business_signal(text)
         out_of_scope = self._has_out_of_scope_signal(text)
 
-        # Fruit/general questions: "color of the apple" must not become Apple Inc.
         if out_of_scope and not business:
             return "out_of_scope"
         if entity and out_of_scope and not business:
@@ -135,36 +127,23 @@ class ClarityClassifier:
             return "financials"
         if any(w in lower for w in ("news", "recent", "development", "developments")):
             return "recent_news"
-        if any(
-            w in lower
-            for w in ("do", "what is", "about", "business", "overview", "products", "ceo")
-        ):
+        if "ceo" in lower:
+            return "ceo"
+        if "product" in lower:
+            return "products"
+        if any(w in lower for w in ("do", "what is", "business", "overview", "about")):
             return "business_overview"
 
         if business and not entity:
             return "needs_clarification"
-
         if entity and business:
             return "business_overview"
-
         if entity and not business and not out_of_scope:
-            # Named company without clear business ask -> assume overview
             return "business_overview"
 
         return "needs_clarification"
 
-    # ── Step 3: Routing decision ───────────────────────────────────────────
-
     def decide(self, query: str, prior_company: str | None = None) -> ClarityDecision:
-        """
-        Combine entity detection + intent into graph routing fields.
-
-        Rules:
-          - company + business intent  -> research path
-          - company-like token + non-business/out-of-scope -> out_of_scope
-          - business intent, no company -> needs clarification (interrupt)
-          - follow-up business intent  -> reuse prior_company from memory
-        """
         entity = self.detect_entity(query)
         intent = self.classify_intent(query, entity)
         business = self._has_business_signal(query)
@@ -173,7 +152,6 @@ class ClarityClassifier:
         needs_clarification = False
         clarification_question: str | None = None
         out_of_scope_reason: str | None = None
-        is_company_research = False
 
         if intent == "out_of_scope":
             if entity:
@@ -196,8 +174,7 @@ class ClarityClassifier:
                 clarity_status="needs_clarification",
             )
 
-        # Business intent but no company in query -> reuse memory or ask user
-        if intent != "out_of_scope" and business and not company:
+        if business and not company:
             company = prior_company
 
         if business and not company:
@@ -210,10 +187,7 @@ class ClarityClassifier:
             elif "ticker" in query.lower() or "symbol" in query.lower():
                 clarification_question = "Which company's ticker symbol do you need?"
             else:
-                clarification_question = (
-                    "Which company are you asking about? "
-                    "(Apple, Tesla, Nvidia, Google, Microsoft)"
-                )
+                clarification_question = "Which company are you asking about?"
 
         if needs_clarification:
             return ClarityDecision(
@@ -226,11 +200,9 @@ class ClarityClassifier:
                 clarity_status="needs_clarification",
             )
 
-        # Clear research path
-        is_company_research = True
         return ClarityDecision(
             intent=intent if intent != "needs_clarification" else "business_overview",
-            is_company_research=is_company_research,
+            is_company_research=True,
             needs_clarification=False,
             clarification_question=None,
             out_of_scope_reason=None,
@@ -239,5 +211,4 @@ class ClarityClassifier:
         )
 
 
-# Module-level singleton for agents/tests
 classifier = ClarityClassifier()

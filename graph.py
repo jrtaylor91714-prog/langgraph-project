@@ -3,20 +3,11 @@
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, StateGraph
 
-from agents import clarity_agent, research_agent, synthesis_agent, validator_agent
-from state import ResearchState
-
-MAX_RESEARCH_ATTEMPTS = 3
-CONFIDENCE_THRESHOLD = 6.0
+from state import CONFIDENCE_THRESHOLD, MAX_ATTEMPTS, ResearchState
 
 
 def route_after_clarity(state: ResearchState) -> str:
-    """
-    Route on routing decision (not entity alone):
-      - is_company_research + company -> research
-      - out_of_scope_reason          -> synthesis (polite decline)
-      - else                         -> END
-    """
+    """Route on routing decision (not entity alone)."""
     if state.get("out_of_scope_reason"):
         return "synthesis"
     if state.get("is_company_research") and state.get("company"):
@@ -26,18 +17,15 @@ def route_after_clarity(state: ResearchState) -> str:
 
 def route_after_research(state: ResearchState) -> str:
     """High confidence -> synthesis; low -> validator."""
-    confidence = state.get("confidence_score") or 0.0
-    if confidence >= CONFIDENCE_THRESHOLD:
+    if (state.get("confidence_score") or 0.0) >= CONFIDENCE_THRESHOLD:
         return "synthesis"
     return "validator"
 
 
 def route_after_validator(state: ResearchState) -> str:
-    """Loop research if insufficient and retries remain; else synthesize."""
-    attempts = state.get("research_attempts") or 0
-    result = state.get("validation_result")
-
-    if result == "insufficient" and attempts < MAX_RESEARCH_ATTEMPTS:
+    """Loop research if insufficient and attempts remain; else synthesize."""
+    attempts = state.get("attempts") or 0
+    if state.get("validation_result") == "insufficient" and attempts < MAX_ATTEMPTS:
         return "research"
     return "synthesis"
 
@@ -46,14 +34,16 @@ def build_graph():
     """
     Graph flow:
 
-        START -> clarity --(company research)--> research --(conf >= 6)--> synthesis -> END
-                    |                              |
-              (out_of_scope)                  (conf < 6)
-                    |                              |
-                    +---------> synthesis <--------+
-                    |         validator --(retry)--+
-              (interrupt / unclear) -> END
+        START -> clarity --(research)--> research --(conf >= 6)--> synthesis -> END
+                    |                       |
+              (out_of_scope)            (conf < 6)
+                    |                       |
+                    +------> synthesis <----+
+                            validator --(retry, attempts < 3)--+
+                    (interrupt / unclear) -> END
     """
+    from agents import clarity_agent, research_agent, synthesis_agent, validator_agent
+
     builder = StateGraph(ResearchState)
 
     builder.add_node("clarity", clarity_agent)
@@ -80,5 +70,4 @@ def build_graph():
     )
     builder.add_edge("synthesis", END)
 
-    checkpointer = MemorySaver()
-    return builder.compile(checkpointer=checkpointer)
+    return builder.compile(checkpointer=MemorySaver())

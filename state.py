@@ -11,6 +11,8 @@ IntentType = Literal[
     "recent_news",
     "competitors",
     "financials",
+    "ceo",
+    "products",
     "out_of_scope",
     "needs_clarification",
 ]
@@ -19,32 +21,29 @@ IntentType = Literal[
 class ResearchState(TypedDict):
     """State passed between all agents in the research graph."""
 
-    # Conversation history (multi-turn support via thread_id + MemorySaver)
     messages: Annotated[list, add_messages]
-
-    # Current user question
     user_query: str
-
-    # Resolved company key (from query, clarification, or prior turn)
     company: Optional[str]
 
-    # Clarity Agent: entity + intent + routing (three-step pipeline)
+    # Clarity Agent (entity + intent + routing)
     intent: Optional[IntentType]
     is_company_research: bool
+    clarity_status: Optional[Literal["clear", "needs_clarification"]]
     needs_clarification: bool
     clarification_question: Optional[str]
     out_of_scope_reason: Optional[str]
-    clarity_status: Optional[Literal["clear", "needs_clarification"]]
 
-    # Research Agent output
+    # Research Agent
     research_findings: Optional[str]
     confidence_score: Optional[float]
+    attempts: int
 
-    # Validator Agent output
+    # Validator Agent
     validation_result: Optional[Literal["sufficient", "insufficient"]]
 
-    # Loop counter for research <-> validator retries
-    research_attempts: int
+    # Synthesis Agent
+    final_response: Optional[str]
 
-    # Synthesis Agent output
-    final_answer: Optional[str]
+
+MAX_ATTEMPTS = 3
+CONFIDENCE_THRESHOLD = 6.0

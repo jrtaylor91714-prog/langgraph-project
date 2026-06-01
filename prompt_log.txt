@@ -1,1 +1,4 @@
-# Prompt log — populated when running main.py demos
+# LangGraph Multi-Agent Research Assistant — Prompt Log
+#
+# Run `python main.py` to execute demo conversations.
+# Each demo prints [ROUTE] and [DEBUG] lines showing graph path and state.

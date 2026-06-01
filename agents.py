@@ -5,11 +5,10 @@ from langgraph.types import interrupt
 
 from classifier import classifier
 from data import resolve_company, search_company
-from state import ResearchState
+from state import MAX_ATTEMPTS, ResearchState
 
 
 def _clarity_fields(decision, query: str) -> dict:
-    """Map ClarityDecision dataclass to state update dict."""
     update: dict = {
         "user_query": query,
         "intent": decision.intent,
@@ -20,7 +19,6 @@ def _clarity_fields(decision, query: str) -> dict:
         "clarity_status": decision.clarity_status,
         "messages": [HumanMessage(content=query)],
     }
-    # Only set company when resolved; omit on out-of-scope to preserve thread memory
     if decision.company is not None:
         update["company"] = decision.company
     return update
@@ -30,21 +28,18 @@ def clarity_agent(state: ResearchState) -> dict:
     """
     Clarity Agent: entity detection -> intent classification -> routing decision.
 
-    Does NOT route on entity alone. Example:
-      - "stock price of Apple"  -> Apple Inc. research
-      - "color of the apple"  -> out_of_scope (fruit, not company)
+    Does NOT route on entity alone:
+      - "stock price of Apple" -> Apple Inc. research
+      - "color of the apple" -> out_of_scope (no research)
     """
     query = state["user_query"].strip()
     prior_company = state.get("company")
 
-    # Step 1-3: deterministic classifier (see classifier.py)
     decision = classifier.decide(query, prior_company=prior_company)
 
-    # Out-of-scope: skip research entirely
     if decision.out_of_scope_reason:
         return _clarity_fields(decision, query)
 
-    # Needs clarification: interrupt for human input (HITL)
     if decision.needs_clarification:
         clarified = interrupt(
             {
@@ -55,7 +50,6 @@ def clarity_agent(state: ResearchState) -> dict:
         clarified = str(clarified).strip()
         company = resolve_company(clarified, fallback=None)
 
-        # User may reply with just a company name; keep original question intent
         if company and len(clarified.split()) <= 2:
             decision = classifier.decide(query, prior_company=company)
         else:
@@ -68,84 +62,90 @@ def clarity_agent(state: ResearchState) -> dict:
 
 
 def research_agent(state: ResearchState) -> dict:
-    """
-    Research Agent: gather company information via mock search tool.
-
-    Uses classified intent to focus mock search results.
-    """
+    """Research Agent: mock search, structured findings, confidence_score, increment attempts."""
     company = state["company"]
-    query = state["user_query"]
     intent = state.get("intent")
-    attempt = state.get("research_attempts", 0) + 1
+    attempt = state.get("attempts", 0) + 1
 
     if not company:
         return {
-            "research_findings": "No company identified.",
+            "research_findings": "error: no company identified",
             "confidence_score": 0.0,
-            "research_attempts": attempt,
+            "attempts": attempt,
         }
 
-    findings, confidence = search_company(company, query, intent=intent, attempt=attempt)
-
+    findings, confidence = search_company(
+        company, state["user_query"], intent=intent, attempt=attempt
+    )
     return {
         "research_findings": findings,
         "confidence_score": confidence,
-        "research_attempts": attempt,
+        "attempts": attempt,
     }
 
 
 def validator_agent(state: ResearchState) -> dict:
-    """Validator Agent: check whether research is complete enough to answer the query."""
-    findings = state.get("research_findings") or ""
+    """Validator Agent: check if findings answer the user's question."""
+    findings = (state.get("research_findings") or "").lower()
     confidence = state.get("confidence_score") or 0.0
     intent = state.get("intent") or ""
-    query = state["user_query"].lower()
 
-    insufficient = confidence < 6.0 or "partial data" in findings.lower()
+    insufficient = confidence < 6.0 or "[partial]" in findings or "partial data" in findings
 
-    if intent in ("stock_price", "ticker") or any(w in query for w in ("stock", "price", "ticker")):
-        if "stock price" not in findings.lower() and "ticker" not in findings.lower():
-            insufficient = True
-
-    if intent == "competitors" and "competitor" not in findings.lower():
+    if intent == "stock_price" and "stock_price" not in findings:
+        insufficient = True
+    if intent == "ticker" and "ticker" not in findings:
+        insufficient = True
+    if intent == "competitors" and "competitors" not in findings:
+        insufficient = True
+    if intent == "ceo" and "ceo" not in findings:
+        insufficient = True
+    if intent == "products" and "products" not in findings:
         insufficient = True
 
-    result = "insufficient" if insufficient else "sufficient"
-    return {"validation_result": result}
+    return {"validation_result": "insufficient" if insufficient else "sufficient"}
 
 
 def synthesis_agent(state: ResearchState) -> dict:
-    """
-    Synthesis Agent: format research or out-of-scope responses.
-
-    Reads conversation history via messages for multi-turn context.
-    """
+    """Synthesis Agent: user-friendly final_response with confidence and caveats."""
     query = state["user_query"]
     out_of_scope = state.get("out_of_scope_reason")
 
     if out_of_scope:
         answer = (
-            f"**Question:** {query}\n\n"
-            f"I can help with company research (stock, news, financials, competitors). "
+            f"Question: {query}\n\n"
+            "This assistant handles company research (stock, news, financials, competitors). "
             f"{out_of_scope}"
         )
-        return {"final_answer": answer, "messages": [AIMessage(content=answer)]}
+        return {"final_response": answer, "messages": [AIMessage(content=answer)]}
 
-    company_key = state.get("company") or "unknown"
-    findings = state.get("research_findings") or "No findings available."
+    company = (state.get("company") or "unknown").title()
     intent = state.get("intent") or "general"
-    attempts = state.get("research_attempts", 1)
+    findings = state.get("research_findings") or "No findings available."
+    confidence = state.get("confidence_score")
+    attempts = state.get("attempts", 1)
+    validation = state.get("validation_result")
 
-    answer_lines = [
-        f"**Question:** {query}",
-        f"**Company:** {company_key.title()}",
-        f"**Intent:** {intent}",
+    lines = [
+        f"Question: {query}",
+        f"Company: {company}",
+        f"Intent: {intent}",
         "",
+        "Key facts:",
         findings,
     ]
 
-    if attempts > 1:
-        answer_lines.append(f"\n_(Research refined after {attempts} attempts.)_")
+    if confidence is not None:
+        lines.append(f"\nConfidence: {confidence}/10")
 
-    answer = "\n".join(answer_lines)
-    return {"final_answer": answer, "messages": [AIMessage(content=answer)]}
+    if attempts > 1:
+        lines.append(f"Research attempts: {attempts}")
+
+    if validation == "insufficient" and attempts >= MAX_ATTEMPTS:
+        lines.append(
+            "\nCaveat: Could not fully verify all requested information after "
+            f"{MAX_ATTEMPTS} research attempts. Answer may be incomplete."
+        )
+
+    answer = "\n".join(lines)
+    return {"final_response": answer, "messages": [AIMessage(content=answer)]}
