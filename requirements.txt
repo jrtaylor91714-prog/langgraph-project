@@ -1,12 +1,4 @@
-langgraph
-langchain
-langchain-core
-langchain-community
-langchain-ollama
-python-dotenv
-pydantic
-fastapi
-uvicorn
-pytest
-chromadb
-sentence-transformers
+langgraph>=0.2.0
+langchain-core>=0.3.0
+python-dotenv>=1.0.0
+pytest>=8.0.0
