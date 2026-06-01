@@ -1,4 +1,405 @@
-# LangGraph Multi-Agent Research Assistant — Prompt Log
-#
-# Run `python main.py` to execute demo conversations.
-# Each demo prints [ROUTE] and [DEBUG] lines showing graph path and state.
+Prompt 1:
+
+Build a runnable LangGraph multi-agent research assistant in python
+
+problem:
+the app accepts a user question about a company or organization
+-what does Tesla do?
+-What is the ticker symbol for Nvidia?
+-what was google's stock price last year?
+
+1. Agent Architecture
+Implement 4 specialized agents:
+a) Clarity Agent
+Analyzes if the user's query is clear and specific
+Checks if company name is mentioned or if query is too vague
+OUTPUT: Sets clarity_status to "clear" or "needs_clarification"
+ROUTES TO: Interrupt (if unclear) OR Research Agent (if clear)
+b) Research Agent
+Searches for company information (news, financials, recent developments)
+This agent should derive this information from a search tool (Tavily MCP would be preferred) or you can use the mock data below. 
+OUTPUT: Returns research findings and assigns a confidence_score (0-10)
+ROUTES TO: Validator Agent (if confidence < 6) OR Synthesis Agent (if confidence ≥ 6)
+c) Validator Agent
+Reviews research quality and completeness
+Checks if information is sufficient to answer the user's question
+OUTPUT: Sets validation_result to "sufficient" or "insufficient"
+ROUTES TO:
+Research Agent (loop back if insufficient AND attempts < 3)
+Synthesis Agent (if sufficient OR max attempts reached)
+d) Synthesis Agent
+Takes research findings and creates a coherent summary
+Formats the response in a user-friendly way
+Maintains context from conversation history
+ROUTES TO: END
+
+technical requirements:
+-use LangGraph stateGraph
+-use TypeDict for state
+-use MemorySaver checkpointer
+-support multi-turn conversation with thread_id
+-use conditional edges
+-use interrupt() for human-in-the-loop clarification
+-keep code simple, clean and interview-friendly
+-add comments explaining the graph flow
+
+project structure:
+
+main.py
+state.py
+data.py
+agents.py
+graph.py
+requirements.txt
+README.md
+prompt_log.txt
+
+mock data:
+include Apple, Tesla, Nvidia, Google/Alphabet and Microsoft
+
+important:
+-make the app runnable with: python main.py
+-demonstrate
+1. clear query flow
+2. vague query clarification flow
+3. low-confidence validation loop
+4. follow-up question using previews company context
+
+do not over-engineer. build the core langGraph workflow first
+
+Prompt 2:
+
+this is the task 
+"LangGraph Multi-Agent Coding Exercise: Research Assistant
+Problem Statement
+Build a multi-agent research assistant using LangGraph that helps users gather information about companies. The system should have multiple specialized agents working together, support follow-up questions, and request human clarification when queries are ambiguous.
+
+Requirements
+1. Agent Architecture
+Implement 4 specialized agents:
+a) Clarity Agent
+Analyzes if the user's query is clear and specific
+Checks if company name is mentioned or if query is too vague
+OUTPUT: Sets clarity_status to "clear" or "needs_clarification"
+ROUTES TO: Interrupt (if unclear) OR Research Agent (if clear)
+b) Research Agent
+Searches for company information (news, financials, recent developments)
+This agent should derive this information from a search tool (Tavily MCP would be preferred) or you can use the mock data below. 
+OUTPUT: Returns research findings and assigns a confidence_score (0-10)
+ROUTES TO: Validator Agent (if confidence < 6) OR Synthesis Agent (if confidence ≥ 6)
+c) Validator Agent
+Reviews research quality and completeness
+Checks if information is sufficient to answer the user's question
+OUTPUT: Sets validation_result to "sufficient" or "insufficient"
+ROUTES TO:
+Research Agent (loop back if insufficient AND attempts < 3)
+Synthesis Agent (if sufficient OR max attempts reached)
+d) Synthesis Agent
+Takes research findings and creates a coherent summary
+Formats the response in a user-friendly way
+Maintains context from conversation history
+ROUTES TO: END
+
+2. Core Features to Implement
+Multi-turn Conversation
+Maintain conversation history across multiple queries
+Each agent should access previous messages for context
+Support follow-up questions like "What about their competitors?" or "Tell me more about the CEO"
+Human-in-the-Loop (Interrupt)
+When Clarity Agent detects an unclear query, interrupt the workflow
+Request clarification from the user (e.g., "Which company are you asking about?")
+Resume processing after receiving clarification
+State Management
+Use a proper state schema that includes
+Conditional Routing
+Appropriate routing across the CLarity, Research & Validation agents
+
+
+3. Mock Data (You Can Use)
+Since you don't need real API calls, mock your research with sample data like:
+mock_research = {
+    "Apple Inc.": {
+        "recent_news": "Launched Vision Pro, expanding services revenue",
+        "stock_info": "Trading at $195, up 45% YTD",
+        "key_developments": "AI integration across product line"
+    },
+    "Tesla": {
+        "recent_news": "Cybertruck deliveries ramping up",
+        "stock_info": "Trading at $242, volatile quarter",
+        "key_developments": "FSD v12 rollout, energy storage growth"
+    }
+}
+
+3. Deliverable
+A zipped code repo that demonstrates, at minimum
+A working LangGraph with 4 agents
+State schema definition with all required fields
+3 conditional routing functions properly implemented
+Feedback loop from Validator back to Research with attempt counter
+Interrupt mechanism for unclear queries
+Multi-turn conversation handling with memory
+At least 2 example conversation turns showing the loop in action
+Showcase software engineering best practices (classes, repo structure, formatting, etc) 
+Instructions on how to run the agentic system in Readme.md
+This is an open ended problem, so if you have any confusion then make reasonable assumptions and state those in the Readme.md
+Anything that can be implemented beyond the above would get a higher rating. Please call that out clearly in Readme.md in a section titled "Beyond Expected Deliverable”
+
+" can you check what implementted or not, do the rest of code ,but "The interviewer raised an important edge case in the Clarity Agent:
+
+Current risk:
+If the query contains the word "Apple", simple company-name matching may incorrectly treat every query as Apple Inc.
+
+Example:
+- "What is the stock price of Apple?" -> should route to company research for Apple Inc.
+- "What is the color of the apple?" -> should NOT route to company research; this is fruit/out-of-scope.
+
+Please update the implementation to fix this.
+
+Requirements:
+1. Do not treat entity/company matching alone as enough.
+2. Add intent classification inside the Clarity Agent.
+3. Add state fields:
+   - intent
+   - is_company_research
+   - needs_clarification
+   - clarification_question
+   - out_of_scope_reason
+
+4. Supported intents:
+   - stock_price
+   - ticker
+   - business_overview
+   - recent_news
+   - competitors
+   - financials
+   - out_of_scope
+   - needs_clarification
+
+5. Implement a simple deterministic classifier first:
+   Company/business keywords:
+   - stock, price, ticker, symbol, shares, revenue, market cap, earnings, financials, business, company, competitors, news, CEO, products
+
+   Out-of-scope/non-company keywords:
+   - color, taste, recipe, fruit, eat, nutrition, calories, tree
+
+6. Routing logic:
+   - If query contains a known company/ticker AND business intent -> route to Research Agent.
+   - If query contains company-like term but non-business intent -> return out-of-scope or clarification, do NOT route to Research Agent.
+   - If query has business intent but no company -> interrupt and ask which company.
+   - If follow-up query has business intent but no company, reuse company from previous state.
+   - If intent is unclear -> interrupt and ask a targeted clarification question.
+
+7. Add tests or demo examples for:
+   - "What is the stock price of Apple?" -> Apple Inc., research path.
+   - "What is the color of the apple?" -> out_of_scope, no research.
+   - "What does Tesla do?" -> Tesla, research path.
+   - "What about competitors?" after Tesla query -> reuse Tesla from memory/context.
+   - "What is the stock price?" -> interrupt asking which company.
+
+8. Keep changes minimal and preserve the existing LangGraph architecture:
+   Clarity -> Research -> Validator -> Synthesis.
+
+9. Make sure `python main.py` still runs and prints/demoes these cases clearly.
+
+Explain in comments that the fix separates:
+- entity detection
+- intent classification
+- routing decision
+
+This directly addresses the interviewer’s concern that Apple the fruit and Apple Inc. should not be confused."
+
+Prompt 3:
+
+Update this LangGraph coding exercise to fully satisfy the problem statement and interviewer feedback.
+
+Original goal:
+Build a LangGraph multi-agent research assistant for company research with:
+- Clarity Agent
+- Research Agent
+- Validator Agent
+- Synthesis Agent
+- conditional routing
+- interrupt for unclear queries
+- multi-turn memory
+- validator feedback loop
+- README and example runs
+
+Important interviewer feedback / edge case:
+The Clarity Agent must NOT rely only on company-name matching.
+
+Example:
+- "What is the stock price of Apple?" => Apple Inc., company research, route to Research Agent
+- "What is the color of the apple?" => fruit/out-of-scope, do NOT route to Research Agent
+
+Fix:
+Separate these three concerns:
+1. Entity detection: is a company/ticker mentioned?
+2. Intent classification: is this actually a company/business/financial research question?
+3. Routing decision: should the graph research, interrupt, or return out-of-scope?
+
+Add or verify state fields:
+- messages
+- user_query
+- company
+- intent
+- is_company_research
+- clarity_status
+- needs_clarification
+- clarification_question
+- out_of_scope_reason
+- research_findings
+- confidence_score
+- validation_result
+- attempts
+- final_response
+
+Supported intents:
+- stock_price
+- ticker
+- business_overview
+- recent_news
+- competitors
+- financials
+- ceo
+- products
+- out_of_scope
+- needs_clarification
+
+Clarity Agent requirements:
+- Detect known companies and aliases:
+  - Apple, Apple Inc., AAPL
+  - Tesla, TSLA
+  - Nvidia, NVDA
+  - Google, Alphabet, GOOGL
+  - Microsoft, MSFT
+- Detect business intent using keywords:
+  stock, price, ticker, symbol, shares, revenue, market cap, earnings, financials, business, company, competitors, news, CEO, products
+- Detect out-of-scope fruit/general intent:
+  color, taste, recipe, fruit, eat, nutrition, calories, tree
+- If known company + business intent => clarity_status="clear"
+- If known company term + out_of_scope intent => do NOT research; route to final response explaining it is outside company research scope
+- If business intent but no company and no prior company context => interrupt and ask "Which company are you asking about?"
+- If follow-up query has business intent but no company, reuse previous company from memory/state
+- If unclear => interrupt with a targeted clarification question
+
+Research Agent:
+- Use mock data, no external API required
+- Return structured findings
+- Assign confidence_score 0-10
+- Increment attempts
+- Include at least one low-confidence mock path to demonstrate Validator loop
+
+Validator Agent:
+- Validate if findings answer the original user question
+- If sufficient => Synthesis
+- If insufficient and attempts < 3 => Research
+- If attempts >= 3 => Synthesis with best available answer and caveat
+
+Synthesis Agent:
+- Produce user-friendly final answer
+- Include company, intent, key facts, confidence score, and caveats
+- For out_of_scope, return a polite message without pretending to research company data
+
+LangGraph requirements:
+- Use StateGraph
+- Use TypedDict state
+- Use MemorySaver checkpointer
+- Use interrupt() for human clarification
+- Add at least 3 conditional routing functions:
+  - after clarity
+  - after research
+  - after validation
+- Ensure graph terminates safely and avoids infinite loops
+
+Repo structure:
+- main.py
+- state.py
+- data.py
+- agents.py
+- graph.py
+- requirements.txt
+- README.md
+- prompt_log.txt
+
+README requirements:
+Add:
+1. Overview
+2. Architecture
+3. State schema
+4. Routing logic
+5. How to run
+6. Example conversations
+7. Assumptions
+8. Beyond Expected Deliverable
+
+In "Beyond Expected Deliverable", explicitly mention:
+- interviewer edge-case fix for Apple fruit vs Apple Inc.
+- intent classification before routing
+- out-of-scope handling
+- follow-up company reuse from memory
+- deterministic mock data for reliable evaluation
+
+Demo cases required in main.py:
+1. "What is the stock price of Apple?"
+   Expected: Apple Inc., stock_price intent, research path
+
+2. "What is the color of the apple?"
+   Expected: out_of_scope, no research
+
+3. "What does Tesla do?"
+   Expected: Tesla, business_overview, research path
+
+4. Follow-up after Tesla:
+   "What about competitors?"
+   Expected: reuse Tesla from memory/context
+
+5. "What is the stock price?"
+   Expected: interrupt asking which company
+
+6. Low-confidence example:
+   Query for unknown or incomplete company data should route Research -> Validator -> Research loop until sufficient or max attempts
+
+Make sure:
+- python main.py runs without errors
+- Output clearly shows which path was taken
+- Print route/debug information for demo visibility
+- Keep the implementation clean, simple, and interview-friendly
+
+Prompt 4:
+
+I checked it. **Yes — it satisfies the problem and the interviewer feedback very well.**
+
+The strongest parts:
+
+* 4 agents are implemented: clarity, research, validator, synthesis.
+* LangGraph `StateGraph` is used with conditional routing.
+* `MemorySaver` is used for multi-turn behavior.
+* `interrupt()` is used for missing-company clarification.
+* Validator loop exists with max attempts.
+* README clearly explains architecture, state, routing, demos, assumptions, and “Beyond Expected Deliverable.”
+* The interviewer’s edge case is handled: **Apple Inc. vs apple fruit**. The README explicitly shows `"stock price of Apple"` routes to research while `"color of the apple"` routes to synthesis without research. ([GitHub][1])
+
+One thing to fix before submission:
+
+Your GitHub repo includes `__pycache__`, which should not be in the zip. Remove it:
+
+```bash
+rm -rf __pycache__ tests/__pycache__
+git rm -r --cached __pycache__ tests/__pycache__ 2>/dev/null
+git add .
+git commit -m "Remove cache files before submission"
+```
+
+Also double-check locally:
+
+```bash
+python main.py
+pytest tests/
+```
+
+If both pass, zip the repo **without `.venv` and without `__pycache__`**.
+
+My verdict: **submission-ready after removing cache files.**
+
+[1]: https://github.com/jrtaylor91714-prog/langgraph-project "GitHub - jrtaylor91714-prog/langgraph-project · GitHub"
+
